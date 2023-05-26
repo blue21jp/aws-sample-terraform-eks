@@ -1,0 +1,166 @@
+#+title: Terraform Demo
+
+* NOTE
+
+EKS(fargate)を使って
+argocd, dashboardを動かすDEMO環境をterraformで作ります。
+動作確認後、お掃除して終わります。
+
+* DEMO
+
+** TODO 作業開始
+** TODO 作業環境の確認
+作業する準備が完了しているかチェック
+
+- [ ] terraform確認
+      make plan ENV=prd -C stacks_base/00_check
+
+** TODO ネットワーク構築 [0/2]
+下記TODOのmakeを自動実行
+make apply ENV=prd OPT="-auto-approve" -C stacks_base
+
+*** TODO VPC作成
+vpc,subnetを構築
+
+- [ ] network作成
+      make apply ENV=prd -C stacks_base/01_network
+- [ ] 確認
+      lsvpc, lsvpc-sub
+
+*** TODO NATインスタンス作成
+NATインスタンス(EC2)を構築
+
+- [ ] NATインスタンス
+      make apply ENV=prd -C stacks_base/02_ec2_nat
+- [ ] 確認
+      lsec2
+
+** TODO EKS構築 [0/9]
+下記TODOのmakeを自動実行
+make apply ENV=prd OPT="-auto-approve" -C stacks_eks
+
+*** TODO aws: VPCにTAG設定
+alb controllerで使用するTAGをsubnetに設定します。
+
+- [ ] tag設定
+      make apply ENV=prd -C stacks_eks/01_vpc
+- [ ] 確認
+      lstag <subnet_id>
+*** TODO aws: SSM作成
+SSMパラメータにbitbucketのssh秘密鍵登録
+
+- [ ] ssm parameter 登録
+      make apply ENV=prd -C stacks_eks/02_ssm
+- [ ] 確認
+      lsssm
+*** TODO aws: EKS作成
+EKSクラスタを構築し、fargate profileを作成します
+
+- [ ] eks cluster作成
+      make apply ENV=prd -C stacks_eks/10_eks_cluster
+- [ ] kubeconfig 設定
+      aws eks update-kubeconfig --name eks-main --alias eks-main
+- [ ] 確認
+      kubectl get pods -A
+*** TODO k8s: alb controller インストール
+k8sにalb controllerをhelmインストール
+
+- [ ] install
+      make apply ENV=prd -C stacks_eks/20_k8s_alb_controller
+- [ ] 確認
+      kubectl get svc -A
+*** TODO k8s: eso インストール
+k8sにesoをhelmインストール
+
+- [ ] install
+      make apply ENV=prd -C stacks_eks/20_k8s_eso
+- [ ] 確認. ssm-secret-storeのstatusがvalidならOK
+      kubectl get clustersecretstores
+
+*** TODO k8s: metric server インストール
+k8sにmetric serverをhelmインストール
+
+- [ ] install
+      make apply ENV=prd -C stacks_eks/20_k8s_metric_server
+- [ ] 確認
+      kubectl get svc -A
+
+*** TODO k8s: argocd インストール
+k8sにargocdをhelmインストール
+
+- [ ] install
+      make apply ENV=prd -C stacks_eks/21_k8s_argocd
+- [ ] 確認
+      kubectl get svc -A
+- [ ] GUIの初期password
+      kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
+- [ ] ALBのDNS名確認
+      lselb
+- [ ] GUIログイン
+      http://<ALBのDNS>
+- [ ] GUI確認. repositoryがsuccesssならOK
+
+*** TODO k8s: dashbord インストール
+k8sにdashboardをhelmインストール
+
+- [ ] install
+      make apply ENV=prd -C 20_stacks_eks/21_k8s_dashboard
+- [ ] 確認
+      kubectl get svc -A
+- [ ] ALBのDNS名確認
+      lselb
+- [ ] GUI確認. 認証なし
+      http://<ALBのDNS>
+
+*** TODO k8s: app デプロイ
+argocdにapplicationを登録
+
+- [ ] deploy
+      make apply ENV=prd -C stacks_eks/40_app_argocd
+- [ ] ALBのDNS名確認
+      lselb
+- [ ] argocd GUI確認
+      http://<ALBのDNS>
+- [ ] dashboard GUI確認
+      http://<ALBのDNS>
+- [ ] web
+      http://<nginx用ALBのDNS>
+      http://<php用ALBのDNS>
+** TODO podのスケールアウト
+- [ ] ApacheBench
+      ab -c 5 -n 1000 http://<php用ALBのDNS>
+- [ ] argocdのGUIで確認
+** TODO podに入る
+- [ ] dashboardでpodに入る(権限不足でNG)
+- [ ] dashboardが権限を無視するように変更
+```
+$ cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-dashboard
+    namespace: kubernetes-dashboard
+EOF
+```
+- [ ] dashboardでpodに入る(ok)
+** TODO 掃除
+上記で作成したリソースを全部破棄してterraform環境初期化
+
+- [ ] destroy
+      make destroy ENV=prd OPT="-auto-approve" -C stacks_eks
+      lseks
+      make destroy ENV=prd OPT="-auto-approve" -C stacks_base
+      lsvpc
+- [ ] clean
+      make clean -C stacks_eks
+      make clean -C stacks_base
+
+** TODO 作業終了

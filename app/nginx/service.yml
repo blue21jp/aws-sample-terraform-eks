@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  namespace: app
+  labels:
+    app: demo
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    # Deploymentで指定したPodの名前を指定
+    app: nginx
